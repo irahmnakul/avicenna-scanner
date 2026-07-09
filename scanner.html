@@ -81,15 +81,26 @@
       } catch (e) { /* звук не критичен, игнорируем */ }
     }
 
+    var sendRetryCounts = {};
     function sendScan(code) {
       if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf("ВСТАВЬТЕ") !== -1) {
         alert("⚠️ Не настроен APPS_SCRIPT_URL внутри scanner.html — сканы никуда не отправляются.");
         return;
       }
       var url = APPS_SCRIPT_URL + '?action=submitScan&session=' + encodeURIComponent(session) + '&code=' + encodeURIComponent(code);
-      // GET + no-cors: Apps Script не умеет отвечать с правильными CORS-заголовками,
-      // поэтому мы не читаем ответ, а просто "стреляем и забываем" — данные всё равно долетают.
-      fetch(url, { mode: 'no-cors' }).catch(function () { /* сеть моргнула — сработает на следующем скане */ });
+      // GET + no-cors: Apps Script не умеет отвечать с правильными CORS-заголовками, поэтому мы не
+      // читаем ответ (он "непрозрачный"), но зато .catch() ловит настоящий сетевой сбой (нет связи,
+      // DNS и т.п.) — раньше такой сбой тихо игнорировался, и скан пропадал без единого следа.
+      // Теперь при реальном сбое сети — короткий повтор, и если не помогло — явное предупреждение.
+      fetch(url, { mode: 'no-cors' }).catch(function () {
+        var n = (sendRetryCounts[code] || 0) + 1; sendRetryCounts[code] = n;
+        if (n <= 2) {
+          setTimeout(function () { sendScan(code); }, 700);
+        } else {
+          document.getElementById('topbar').textContent = "❌ Нет связи с сервером! Наведите камеру ещё раз на этот бейдж.";
+          if (navigator.vibrate) { try { navigator.vibrate([120, 80, 120]); } catch (e) {} }
+        }
+      });
     }
 
     function tick() {
